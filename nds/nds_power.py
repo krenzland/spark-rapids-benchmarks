@@ -447,8 +447,8 @@ if __name__ == "__main__":
                         action='store_true',
                         help='Do not exit with non zero when any query failed or any task failed')
     parser.add_argument('--profiling_hook',
-                        help='Executable that is called just before/after a query starts executing.' +
-                        'Executable is called like this ' +
+                        help='Executable that is called just before/after a query executes.' +
+                        'The executable is called like this ' +
                         './hook {start|stop} output_directory query_name.')
     args = parser.parse_args()
     query_dict = gen_sql_from_stream(args.query_stream_file)
