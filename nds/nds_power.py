@@ -54,14 +54,10 @@ class Profiler:
         self.output_root = output_root
         self.is_profiling_enabled = output_root is not None and profiling_hook is not None
 
-        self.output_directory = None
         self.query_name = None
 
     def __call__(self, query_name):
         self.query_name = query_name
-        self.output_directory = os.path.join(self.output_root, query_name)
-        os.makedirs(self.output_directory, exist_ok=True)
-        print(f"Creating {self.output_directory} for profiling.")
         return self
 
     def __enter__(self,):
@@ -70,12 +66,11 @@ class Profiler:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.stop_profiling()
-        self.output_directory = None
         self.query_name = None
 
     def execute_script(self, action):
         script_path = self.profiling_hook
-        command = f"{script_path} {action} {shlex.quote(self.output_directory)} {shlex.quote(self.query_name)}"
+        command = f"{script_path} {action} {shlex.quote(self.output_root)} {shlex.quote(self.query_name)}"
         try:
             subprocess.run(command, shell=True, check=True)
         except subprocess.CalledProcessError as e:
@@ -84,7 +79,7 @@ class Profiler:
 
     def start_profiling(self):
         if self.is_profiling_enabled:
-            print(f"Profiling started with profiling script: {self.profiling_hook} writing to {self.output_directory} for query {self.query_name}.")
+            print(f"Profiling started with profiling script: {self.profiling_hook} writing to {self.output_root} for query {self.query_name}.")
             self.execute_script('start')
 
     def stop_profiling(self):
@@ -449,7 +444,7 @@ if __name__ == "__main__":
     parser.add_argument('--profiling_hook',
                         help='Executable that is called just before/after a query executes.' +
                         'The executable is called like this ' +
-                        './hook {start|stop} output_directory query_name.')
+                        './hook {start|stop} output_root query_name.')
     args = parser.parse_args()
     query_dict = gen_sql_from_stream(args.query_stream_file)
     run_query_stream(args.input_prefix,
