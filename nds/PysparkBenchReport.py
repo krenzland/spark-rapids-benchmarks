@@ -36,6 +36,7 @@ import time
 import traceback
 from typing import Callable
 from pyspark.sql import SparkSession
+import inspect
 
 import python_listener
 
@@ -62,7 +63,11 @@ class PysparkBenchReport:
         information like tokens, secret and password Generate summary in dict format for it.
 
         Args:
-            fn (Callable): a function to be recorded
+            fn (Callable): a function to be recorded. Can be either a regular function or a generator
+                          function that yields after each sub-operation.
+            warmup_iterations (int): number of warmup iterations
+            iterations (int): number of actual iterations
+            *args: arguments to pass to the function
 
         Returns:
             dict: summary of the fn
@@ -83,10 +88,19 @@ class PysparkBenchReport:
             listener = None
         if listener is not None:
             print("TaskFailureListener is registered.")
+
+        # Initialize sub-operation timing structure
+        self.summary['subOperationTimes'] = []
+
         try:
             # warmup
             for i in range(0, warmup_iterations):
-                fn(*args)
+                if inspect.isgeneratorfunction(fn):
+                    # For generator functions, we need to consume all yields
+                    for _ in fn(*args):
+                        pass
+                else:
+                    fn(*args)
         except Exception as e:
             print('ERROR WHILE WARMUP BEGIN')
             print(e)
@@ -95,12 +109,31 @@ class PysparkBenchReport:
 
         start_time = int(time.time() * 1000)
         self.summary['startTime'] = start_time
+        
         # run the query
         for i in range(0, iterations):
             try:
-                start_time = int(time.time() * 1000)
-                fn(*args)
-                end_time = int(time.time() * 1000)
+                iteration_start = int(time.time() * 1000)
+                if inspect.isgeneratorfunction(fn):
+                    # Track sub-operations for generator functions
+                    sub_ops = []
+                    last_time = iteration_start
+                    for op_name in fn(*args):
+                        current_time = int(time.time() * 1000)
+                        sub_ops.append({
+                            'name': op_name,
+                            'startTime': last_time,
+                            'endTime': current_time,
+                            'duration': current_time - last_time
+                        })
+                        last_time = current_time
+                    end_time = last_time
+                    self.summary['subOperationTimes'].append(sub_ops)
+                else:
+                    # Original behavior for regular functions
+                    fn(*args)
+                    end_time = int(time.time() * 1000)
+                
                 if listener and len(listener.failures) != 0:
                     self.summary['queryStatus'].append("CompletedWithTaskFailures")
                 else:
@@ -115,7 +148,7 @@ class PysparkBenchReport:
                 self.summary['queryStatus'].append("Failed")
                 self.summary['exceptions'].append(str(e))
             finally:
-                self.summary['queryTimes'].append(end_time - start_time)
+                self.summary['queryTimes'].append(end_time - iteration_start)
         if listener is not None:
             listener.unregister()
         return self.summary

@@ -171,12 +171,28 @@ def run_one_query(spark_session,
                   output_format):
     with profiler(query_name=query_name):
         print(f"Running query {query_name}")
+
+        # The breakdown below is approximate.
+        # Optimization time will be included in the execution time if adaptive query execution is enabled.
+        # Further note that everything is lazily evaluated in Spark, so the steps will be executed at the
+        # beginning of the next step.
         df = spark_session.sql(query)
+        query_execution = df._jdf.queryExecution()
+        query_execution.logical()
+        yield "parsingTime"
+        query_execution.analyzed()
+        yield "analysisTime"
+        query_execution.optimizedPlan()
+        yield "optimizationTime"
+        query_execution.executedPlan()
+        yield "planningTime"
+
         if not output_path:
             df.collect()
         else:
             ensure_valid_column_names(df).write.format(output_format).mode('overwrite').save(
                     output_path + '/' + query_name)
+        yield "executionTime"
 
 def ensure_valid_column_names(df: DataFrame):
     def is_column_start(char):
